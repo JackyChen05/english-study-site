@@ -40,6 +40,62 @@
           </button>
         </div>
 
+        <!-- 句型题：将单词组成正确的句子 -->
+        <div v-else-if="currentQuestion.type === 'sentence'" class="space-y-6">
+          <!-- 中文翻译提示 -->
+          <p class="text-gray-600 text-center">{{ currentQuestion.translation }}</p>
+
+          <!-- 已选单词区域 -->
+          <div class="min-h-[60px] p-4 bg-blue-50 rounded-xl border-2 border-dashed border-blue-200">
+            <p class="text-sm text-gray-500 mb-2">点击单词移除：</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="(word, index) in sentenceAnswer"
+                :key="index"
+                @click="removeWord(index)"
+                class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all"
+                :disabled="isAnswered"
+              >
+                {{ word }}
+              </button>
+              <span v-if="sentenceAnswer.length === 0" class="text-gray-400 italic">点击下面单词组成句子...</span>
+            </div>
+          </div>
+
+          <!-- 可选单词区域 -->
+          <div v-if="!isAnswered">
+            <p class="text-sm text-gray-500 mb-2">选择单词：</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="(word, index) in remainingWords"
+                :key="index"
+                @click="addWord(word, index)"
+                class="px-3 py-2 bg-white border-2 border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all"
+              >
+                {{ word }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div v-if="!isAnswered" class="flex gap-3">
+            <button
+              @click="resetSentence"
+              class="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all"
+              :disabled="sentenceAnswer.length === 0"
+            >
+              重置
+            </button>
+            <button
+              @click="submitSentence"
+              class="px-4 py-2 text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-all"
+              :disabled="sentenceAnswer.length === 0"
+            >
+              提交答案
+            </button>
+          </div>
+        </div>
+
         <div v-if="isAnswered" class="mt-4 p-4 rounded-xl" :class="isCorrect ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'">
           {{ isCorrect ? '✓ 回答正确！' : '✗ 回答错误，正确答案是：' + currentQuestion.answer }}
         </div>
@@ -71,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useProgressStore } from '../stores/progress'
 import { useMistakesStore } from '../stores/mistakes'
 import { units } from '../data/textbook'
@@ -97,6 +153,10 @@ const isFinished = ref(false)
 const score = ref(0)
 const correctCount = ref(0)
 const wrongQuestions = ref([])
+
+// 句型题专用状态
+const sentenceAnswer = ref([])
+const remainingWords = ref([])
 
 const currentQuestion = computed(() => allQuestions.value[currentIndex.value])
 
@@ -135,12 +195,63 @@ const selectAnswer = (answer) => {
   }
 }
 
+// 句型题方法：初始化剩余单词
+const initSentenceQuestion = () => {
+  if (currentQuestion.value?.type === 'sentence') {
+    sentenceAnswer.value = []
+    remainingWords.value = [...(currentQuestion.value.scrambled || [])]
+  }
+}
+
+// 句型题方法：添加单词到答案
+const addWord = (word, index) => {
+  if (isAnswered.value) return
+  sentenceAnswer.value.push(word)
+  remainingWords.value.splice(index, 1)
+}
+
+// 句型题方法：从答案中移除单词
+const removeWord = (index) => {
+  if (isAnswered.value) return
+  const word = sentenceAnswer.value[index]
+  sentenceAnswer.value.splice(index, 1)
+  remainingWords.value.push(word)
+}
+
+// 句型题方法：重置答案
+const resetSentence = () => {
+  if (isAnswered.value) return
+  sentenceAnswer.value = []
+  remainingWords.value = [...(currentQuestion.value.scrambled || [])]
+}
+
+// 句型题方法：提交答案
+const submitSentence = () => {
+  if (isAnswered.value || sentenceAnswer.value.length === 0) return
+  const userSentence = sentenceAnswer.value.join(' ')
+  userAnswer.value = userSentence
+  isAnswered.value = true
+  isCorrect.value = checkAnswer(currentQuestion.value, userSentence)
+
+  if (isCorrect.value) {
+    correctCount.value++
+  } else {
+    wrongQuestions.value.push({
+      ...currentQuestion.value,
+      userAnswer: userSentence
+    })
+  }
+}
+
 const nextQuestion = () => {
   if (currentIndex.value < allQuestions.value.length - 1) {
     currentIndex.value++
     userAnswer.value = null
     isAnswered.value = false
     isCorrect.value = false
+    sentenceAnswer.value = []
+    // 初始化新题目的句型题状态
+    initSentenceQuestion()
   } else {
     finishQuiz()
   }
@@ -166,5 +277,13 @@ const restartQuiz = () => {
   score.value = 0
   correctCount.value = 0
   wrongQuestions.value = []
+  sentenceAnswer.value = []
+  remainingWords.value = []
+  initSentenceQuestion()
 }
+
+// 监听题目变化，初始化句型题
+watch(currentQuestion, () => {
+  initSentenceQuestion()
+}, { immediate: true })
 </script>
